@@ -1,4 +1,3 @@
-# Long 300 api
 from binance.um_futures import UMFutures
 from binance.error import ClientError
 import math
@@ -13,11 +12,10 @@ client = UMFutures(key=api_key, secret=api_secret)
 
 # Trading parameters
 symbol = 'XMRUSDT'
-usdt_amount = 2.5  # $2.5 USDT
+usdt_amount = 2.5
 leverage = 20
 take_profit_percent = 0.4
 stop_loss_percent = 0.4
-position_duration = 290  # seconds
 
 def get_symbol_info(symbol):
     exchange_info = client.exchange_info()
@@ -36,29 +34,12 @@ def get_open_orders(symbol):
 def cancel_order(symbol, order_id):
     try:
         client.cancel_order(symbol=symbol, orderId=order_id)
+        print(f"Order {order_id} cancelled successfully")
     except ClientError as error:
-        pass
+        print(f"Error cancelling order {order_id}: {error}")
 
-def close_position(symbol, quantity):
-    try:
-        client.new_order(
-            symbol=symbol,
-            side="SELL",
-            type="MARKET",
-            quantity=quantity
-        )
-    except ClientError as error:
-        pass
-
-def monitor_orders(symbol, tp_order_id, sl_order_id, quantity, start_time):
+def monitor_orders(symbol, tp_order_id, sl_order_id):
     while True:
-        current_time = time.time()
-        if current_time - start_time >= position_duration:
-            cancel_order(symbol, tp_order_id)
-            cancel_order(symbol, sl_order_id)
-            close_position(symbol, quantity)
-            break
-
         open_orders = get_open_orders(symbol)
 
         tp_order_open = any(order['orderId'] == tp_order_id for order in open_orders)
@@ -66,11 +47,14 @@ def monitor_orders(symbol, tp_order_id, sl_order_id, quantity, start_time):
 
         if not tp_order_open and sl_order_open:
             cancel_order(symbol, sl_order_id)
+            print("Take profit triggered. Position closed.")
             break
         elif not sl_order_open and tp_order_open:
             cancel_order(symbol, tp_order_id)
+            print("Stop loss triggered. Position closed.")
             break
         elif not tp_order_open and not sl_order_open:
+            print("Both orders closed. Position may have been manually closed.")
             break
 
         time.sleep(3)  # Wait for 3 seconds before checking again
@@ -84,10 +68,12 @@ def place_long_trade():
 
         # Set leverage
         client.change_leverage(symbol=symbol, leverage=leverage)
+        print(f"Leverage set to {leverage}x")
 
         # Get current market price
         ticker = client.ticker_price(symbol)
         entry_price = float(ticker['price'])
+        print(f"Current {symbol} price: {entry_price}")
 
         # Calculate quantity based on USDT amount and leverage
         quantity = (usdt_amount * leverage) / entry_price
@@ -104,6 +90,7 @@ def place_long_trade():
             type="MARKET",
             quantity=rounded_quantity
         )
+        print(f"Market order placed: {order}")
 
         # Place take profit order
         tp_order = client.new_order(
@@ -115,6 +102,7 @@ def place_long_trade():
             stopPrice=take_profit_price,
             workingType="MARK_PRICE"
         )
+        print(f"Take profit order placed: {tp_order}")
 
         # Place stop loss order
         sl_order = client.new_order(
@@ -126,13 +114,14 @@ def place_long_trade():
             stopPrice=stop_loss_price,
             workingType="MARK_PRICE"
         )
+        print(f"Stop loss order placed: {sl_order}")
 
         # Monitor orders
-        start_time = time.time()
-        monitor_orders(symbol, tp_order['orderId'], sl_order['orderId'], rounded_quantity, start_time)
+        monitor_orders(symbol, tp_order['orderId'], sl_order['orderId'])
 
     except ClientError as error:
-        pass
+        print(f"An error occurred: {error}")
 
 if __name__ == "__main__":
     place_long_trade()
+    
