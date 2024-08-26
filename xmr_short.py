@@ -1,8 +1,6 @@
-# Short 300 api
 from binance.um_futures import UMFutures
 from binance.error import ClientError
 import math
-import time
 
 # API credentials
 api_key = 'JFLjFf3LvzqDE2t1FL5BKcVG3gaEfa0bPKONOSOc1zIrI0NDU9g7cuyNKT6nQFcd'
@@ -13,11 +11,10 @@ client = UMFutures(key=api_key, secret=api_secret)
 
 # Trading parameters
 symbol = 'XMRUSDT'
-usdt_amount = 2.5  # $2.5 USDT
+usdt_amount = 2.5
 leverage = 20
 take_profit_percent = 0.4
 stop_loss_percent = 0.4
-position_duration = 290  # seconds
 
 def get_symbol_info(symbol):
     exchange_info = client.exchange_info()
@@ -29,52 +26,6 @@ def get_symbol_info(symbol):
 def round_step_size(quantity, step_size):
     precision = int(round(-math.log(step_size, 10), 0))
     return round(quantity, precision)
-
-def get_open_orders(symbol):
-    return client.get_orders(symbol=symbol)
-
-def cancel_order(symbol, order_id):
-    try:
-        client.cancel_order(symbol=symbol, orderId=order_id)
-    except ClientError as error:
-        pass
-
-def close_position(symbol, quantity):
-    try:
-        client.new_order(
-            symbol=symbol,
-            side="BUY",  # Buying to close a short position
-            type="MARKET",
-            quantity=quantity
-        )
-    except ClientError as error:
-        pass
-
-def monitor_orders_with_timeout(symbol, tp_order_id, sl_order_id, quantity, timeout):
-    start_time = time.time()
-    while True:
-        current_time = time.time()
-        if current_time - start_time > timeout:
-            cancel_order(symbol, tp_order_id)
-            cancel_order(symbol, sl_order_id)
-            close_position(symbol, quantity)
-            break
-
-        open_orders = get_open_orders(symbol)
-
-        tp_order_open = any(order['orderId'] == tp_order_id for order in open_orders)
-        sl_order_open = any(order['orderId'] == sl_order_id for order in open_orders)
-
-        if not tp_order_open and sl_order_open:
-            cancel_order(symbol, sl_order_id)
-            break
-        elif not sl_order_open and tp_order_open:
-            cancel_order(symbol, tp_order_id)
-            break
-        elif not tp_order_open and not sl_order_open:
-            break
-
-        time.sleep(3)  # Wait for 3 seconds before checking again
 
 def place_short_trade():
     try:
@@ -93,6 +44,7 @@ def place_short_trade():
         take_profit_price = round_step_size(entry_price * (1 - take_profit_percent / 100), float(price_precision))
         stop_loss_price = round_step_size(entry_price * (1 + stop_loss_percent / 100), float(price_precision))
 
+        # Place market sell order to open short position
         order = client.new_order(
             symbol=symbol,
             side="SELL",
@@ -100,6 +52,7 @@ def place_short_trade():
             quantity=rounded_quantity
         )
 
+        # Place take profit order
         tp_order = client.new_order(
             symbol=symbol,
             side="BUY",
@@ -110,6 +63,7 @@ def place_short_trade():
             workingType="MARK_PRICE"
         )
 
+        # Place stop loss order
         sl_order = client.new_order(
             symbol=symbol,
             side="BUY",
@@ -120,10 +74,15 @@ def place_short_trade():
             workingType="MARK_PRICE"
         )
 
-        monitor_orders_with_timeout(symbol, tp_order['orderId'], sl_order['orderId'], rounded_quantity, position_duration)
+        print(f"Short position opened for {symbol}")
+        print(f"Entry Price: {entry_price}")
+        print(f"Quantity: {rounded_quantity}")
+        print(f"Take Profit Price: {take_profit_price}")
+        print(f"Stop Loss Price: {stop_loss_price}")
 
     except ClientError as error:
-        pass
+        print(f"An error occurred: {error}")
 
 if __name__ == "__main__":
     place_short_trade()
+    
